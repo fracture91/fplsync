@@ -1,0 +1,57 @@
+#!/usr/bin/python3
+
+"""
+consumer provides .foobar/playlists, source music mnt, dest music dir,
+max size of dest dir
+start with empty list of files to sync
+get fpl/name associations from playlist index
+allow consumer to get playlists from foobar by name
+	e.g. Blah.getPlaylist("Ponies")
+	if Ponies was already gotten, return cached playlist
+	otherwise, pull out m3u from fpl file and rewrite paths to relative, cache
+allow consumer to add to list of files to sync
+	e.g. Blah.addMusic(Blah.getPlaylist("Ponies"))
+	throw exception if size of added files greater than max size
+consumer syncs across playlist files of choosing
+	Blah.transferPlaylist("Ponies")
+consumer triggers sync of music files
+	Blah.transferMusic()
+	calls rsync to sync list of files from source to dest
+
+Test: does media player ignore playlist entries that don't exist? yes
+Test: m3u8 files - work
+Test: non-ascii paths - work
+Test: putting playlists in /Playlists - work, add path to scanner
+
+rsync files-from arg doesn't delete files that aren't on the list
+have to do it the following way
+http://stackoverflow.com/a/1813972
+
+rsync -mrltD --modify-window=1 --progress --delete-excluded --include-from=include-list.txt --exclude=* source/ dest
+
+include-list.txt:
+/**/
+/file1.txt
+/somedir/blah.txt
+"""
+
+import sys
+import re
+
+
+input_filename = sys.argv[1]
+output_filename = sys.argv[2]
+
+paths = []
+with open(input_filename, 'rb') as infile:
+	# FPL entries have file URIs surrounded by null bytes
+	paths = re.findall(b'(?<=\x00file://)[^\x00]*(?=\x00)', infile.read())
+	# change the array of bytes to an array of strings
+	paths = [path.decode('utf-8') for path in paths]
+
+
+with open(output_filename, 'w') as outfile:
+	for path in paths:
+		print(path, file=outfile)
+
+print("done")
