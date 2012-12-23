@@ -2,6 +2,7 @@
 
 import re
 import os
+import sys
 import ntpath
 import argparse
 import tempfile
@@ -39,7 +40,7 @@ class Song:
 		"""Create a song with the given windows path
 		
 		windows_path must be whatever was originally in the fpl file, normalized with abspath
-		ex: os.ntpath.abspath("F:\Music\Trucker's Atlas.mp3")
+		ex: ntpath.abspath("F:\Music\Trucker's Atlas.mp3")
 		"""
 		self.windows_path = windows_path
 		self.config = config
@@ -51,6 +52,8 @@ class Song:
 		source - the source directory of all songs (e.g. /media/Tassadar/music)
 		falsePrefix
 		"""
+	def __repr__(self):
+		return self.windows_path
 
 class Playlist:
 	"""Holds a list of songs"""
@@ -81,7 +84,7 @@ class SongIndex:
 		self.songs = {} # windows path -> Song instance
 		self.config = config
 	def get_song(self, windows_path):
-		normalized = os.ntpath.abspath(windows_path)
+		normalized = ntpath.abspath(windows_path)
 		if not normalized in self.songs:
 			self.songs[normalized] = Song(normalized, self.config)
 		return self.songs[normalized]
@@ -93,13 +96,38 @@ class PlaylistIndex:
 
 		Reads playlist name/path associations from index.dat,
 		which is found in the config.playlist_source directory along with fpl files.
-		config.playlists_source should be something like ~/.foobar2000/playlists
+		config.playlist_source should be something like ~/.foobar2000/playlists
 		"""
 		self.config = config
 		self.fpl_files = {} # name -> fpl path
 		self.playlists = {} # name -> playlist
 		self.song_index = SongIndex(self.config)
-		# TODO: parse index.dat, fill in fpl_files dict
+		
+		# parse out the name/path associations
+		indexpath = os.path.join(self.config.playlist_source, "index.dat")
+		with open(indexpath, 'rb') as infile:
+			data = infile.read()
+			# entries have two null bytes, then fpl_path,
+			# then a 16-bit int containing the length of the playlist name,
+			# two null bytes, then the playlist name
+			fpl_re = re.compile(b'(?<=\x00\x00)(\d+\.fpl)(..)(\x00\x00)')
+			lastpos = 0
+			while True:
+				result = fpl_re.search(data, lastpos)
+				if result is None:
+					break
+				fpl_path = result.group(1).decode('utf-8')
+				name_length = int.from_bytes(result.group(2), sys.byteorder)
+				if name_length < 1:
+					raise Exception("Error reading index.dat: name length must be > 0")
+				# update the point that the next search will start from - the end of the name
+				lastpos = result.end() + name_length
+				if lastpos > len(data) - 1:
+					raise Exception("Error reading index.dat: not enough data for name")
+				name = data[result.end():lastpos].decode('utf-8')
+				self.fpl_files[name] = os.path.join(self.config.playlist_source, fpl_path)
+			print(self.fpl_files)
+
 	def get_playlist(self, name):
 		"""Get the playlist with the given name, raises KeyError if it does not exist"""
 		if not name in self.playlists:
@@ -108,6 +136,10 @@ class PlaylistIndex:
 			else:
 				raise KeyError("Playlist " + name + " does not exist")
 		return self.playlists[name]
+
+class OutOfSpaceException(Exception):
+	"""Raised when we run out of space on the device"""
+	pass
 
 class SyncDirector:
 	"""Responsible for actually moving files around
@@ -175,12 +207,12 @@ if __name__ == "__main__":
 	for name in config.playlists:
 		try:
 			director.add_playlist(index.get_playlist(name))
-		except:
+		except OutOfSpaceException:
 			break
 	for name in config.playlists:
 		try:
 			director.add_songs(index.get_playlist(name))
-		except:
+		except OutOfSpaceException:
 			break
 	director.transfer()
 
