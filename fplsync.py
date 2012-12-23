@@ -29,6 +29,8 @@ class Config:
 				raise IOError(prop + "=" + value + " is not a directory")
 		if self.fb2k_source_mapping is not None:
 			self.fb2k_source_mapping = ntpath.abspath(self.fb2k_source_mapping)
+			if not self.fb2k_source_mapping.endswith(ntpath.sep):
+				self.fb2k_source_mapping = self.fb2k_source_mapping + ntpath.sep
 		if not isinstance(self.dry_run, bool):
 			raise TypeError("dry_run must be a bool")
 	def __repr__(self):
@@ -44,14 +46,23 @@ class Song:
 		"""
 		self.windows_path = windows_path
 		self.config = config
-	def get_relative_path(self, source, win_prefix=None):
-		""""""
-	def get_source_path(self, source, falsePrefix=None):
-		"""Get the path to the local file
-		
-		source - the source directory of all songs (e.g. /media/Tassadar/music)
-		falsePrefix
-		"""
+		# the path to the song in the source directory
+		self.source_path = self.windows_path
+		if config.fb2k_source_mapping is not None:
+			# need to transform e.g. F:\Music\artist\song.mp3 to /media/A/Music/artist/song.mp3
+			if not self.source_path.startswith(config.fb2k_source_mapping):
+				raise Exception("Song " + self.source_path + " does not use source mapping")
+			relpath = ntpath.relpath(self.source_path, start=config.fb2k_source_mapping)
+			relpath = relpath.replace(ntpath.sep, os.path.sep)
+			self.source_path = os.path.join(self.config.source, relpath)
+		elif not self.source_path.startswith(self.config.source):
+			raise Exception("Song " + self.source_path + " is not within source")
+		# the path of the song relative to the source directory
+		self.relative_path = os.path.relpath(self.source_path, start=self.config.source)
+		dest_path = os.path.join(self.config.dest, self.relative_path)
+		# the path of the song after copied to dest, relative to playlist_dest
+		self.playlist_path = os.path.relpath(dest_path, start=self.config.playlist_dest)
+			
 	def __repr__(self):
 		return self.windows_path
 
@@ -72,6 +83,17 @@ class Playlist:
 			paths = re.findall(b'(?<=\x00file://)[^\x00]*(?=\x00)', infile.read())
 			# decode the paths as utf-8 and create our songs array
 			self.songs = [self.song_index.get_song(path.decode('utf-8')) for path in paths]
+	def write(self, path):
+		"""Write this playlist as an m3u8 to path/name.m3u8
+		
+		Acts like it is being written to config.playlist_dest with relative paths pointing to
+		config.dest.
+		"""
+		if not os.path.isdir(path):
+			raise Exception("path must point to a directory")
+		with open(os.path.join(path, self.name + ".m3u8"), "w") as outfile:
+			for song in self.songs:
+				print(song.playlist_path, file=outfile)
 	
 
 class SongIndex:
@@ -158,20 +180,29 @@ class SyncDirector:
 		if self.config.playlist_dest is not None:
 			self.playlist_dir = os.path.join(self.temp_dir, "playlists")
 			os.mkdir(self.playlist_dir)
+		self.is_playlist_added = False
 	def add_playlist(self, playlist):
 		"""Add a playlist, which will be transferred to playlist_dest"""
 		if not self.is_gathering:
 			raise Exception("Cannot add playlist after transfer begins")
 		if self.config.playlist_dest is None:
 			raise Exception("Cannot add playlist if playlist_dest was not provided")
-		# TODO
+		# TODO: size check
+		# write to our temp playlist directory
+		playlist.write(self.playlist_dir)
+		self.is_playlist_added = True
 	def add_songs(self, songs):
 		if not self.is_gathering:
 			raise Exception("Cannot add songs after transfer begins")
 		# TODO
 	def transfer(self):
-		# TODO
 		self.is_gathering = False
+		if self.is_playlist_added:
+			# TODO: rsync tmp/playlists
+			pass
+		if len(self.songs) > 0:
+			# TODO: make include file, rsync source and dest
+			pass
 		# clean up temporary directory we made
 		if self.config.dont_delete_temp:
 			print("Skipping temp directory deletion!")
@@ -199,7 +230,7 @@ if __name__ == "__main__":
 	
 	# create a Config instance and set its properties according to command line args
 	config = parser.parse_args(namespace=Config())
-	config.dont_delete_temp = False
+	config.dont_delete_temp = True
 	print(config)
 
 	director = SyncDirector(config)
