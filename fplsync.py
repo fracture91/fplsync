@@ -78,6 +78,7 @@ class Playlist:
 		self.fpl = fpl
 		self.songs = []
 		self.song_index = song_index
+		print("Parsing playlist " + self.name + "...")
 		with open(self.fpl, 'rb') as infile:
 			# FPL entries have file URIs surrounded by null bytes
 			paths = re.findall(b'(?<=\x00file://)[^\x00]*(?=\x00)', infile.read())
@@ -91,6 +92,7 @@ class Playlist:
 		"""
 		if not os.path.isdir(path):
 			raise Exception("path must point to a directory")
+		print("Writing playlist " + self.name)
 		with open(os.path.join(path, self.name + ".m3u8"), "w") as outfile:
 			for song in self.songs:
 				print(song.playlist_path, file=outfile)
@@ -132,7 +134,8 @@ class PlaylistIndex:
 			# entries have two null bytes, then fpl_path,
 			# then a 16-bit int containing the length of the playlist name,
 			# two null bytes, then the playlist name
-			fpl_re = re.compile(b'(?<=\x00\x00)(\d+\.fpl)(..)(\x00\x00)')
+			# re.DOTALL is important, otherwise \x10 doesn't match the dot
+			fpl_re = re.compile(b'(?<=\x00\x00)(\d+\.fpl)(..)(\x00\x00)', re.DOTALL)
 			lastpos = 0
 			while True:
 				result = fpl_re.search(data, lastpos)
