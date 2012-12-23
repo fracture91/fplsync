@@ -2,6 +2,7 @@
 
 import re
 import os
+import ntpath
 import argparse
 
 class Config:
@@ -16,8 +17,17 @@ class Config:
 		self.fb2k_source_mapping = None
 		self.dry_run = False
 	def validate(self):
-		# TODO
-		pass
+		dirprops = ["playlist_source", "source", "dest"]
+		if self.playlist_dest is not None:
+			dirprops.append("playlist_dest")
+		for prop in dirprops:
+			value = getattr(self, prop)
+			if not os.path.isdir(value):
+				raise IOError(prop + "=" + value + " is not a directory")
+		if self.fb2k_source_mapping is not None:
+			self.fb2k_source_mapping = ntpath.abspath(self.fb2k_source_mapping)
+		if not isinstance(self.dry_run, bool):
+			raise TypeError("dry_run must be a bool")
 	def __repr__(self):
 		return "Config {" + ', '.join("%s: %s" % item for item in vars(self).items()) + "}"
 
