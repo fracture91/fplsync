@@ -97,7 +97,8 @@ class PlaylistIndex:
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Sync foobar2000 playlists and their songs")
-	parser.add_argument("playlist-source", help="directory containing foobar2000's FPL files")
+	parser.add_argument("playlist_source", metavar="playlist-source",
+	                    help="directory containing foobar2000's FPL files")
 	parser.add_argument("source", help="directory where all songs in FPLs are stored under")
 	parser.add_argument("dest", help="directory to copy songs to - ALL EXTRANEOUS FILES DELETED")
 	parser.add_argument("playlists", nargs='+', help="at least one playlist name, for which the\
