@@ -4,6 +4,8 @@ import re
 import os
 import ntpath
 import argparse
+import tempfile
+import shutil
 
 class Config:
 	"""Holds all config info - must not be altered after it's passed off to a consumer"""
@@ -33,13 +35,14 @@ class Config:
 
 class Song:
 	"""Describes a song (which is just some file path)"""
-	def __init__(self, windows_path):
+	def __init__(self, windows_path, config):
 		"""Create a song with the given windows path
 		
 		windows_path must be whatever was originally in the fpl file, normalized with abspath
 		ex: os.ntpath.abspath("F:\Music\Trucker's Atlas.mp3")
 		"""
 		self.windows_path = windows_path
+		self.config = config
 	def get_relative_path(self, source, win_prefix=None):
 		""""""
 	def get_source_path(self, source, falsePrefix=None):
@@ -74,27 +77,28 @@ class SongIndex:
 	Since the same song can be used many times even among a single playlist, we don't want to create
 	a whole bunch of duplicate paths in memory
 	"""
-	def __init__(self):
+	def __init__(self, config):
 		self.songs = {} # windows path -> Song instance
+		self.config = config
 	def get_song(self, windows_path):
 		normalized = os.ntpath.abspath(windows_path)
 		if not normalized in self.songs:
-			self.songs[normalized] = Song(normalized)
+			self.songs[normalized] = Song(normalized, self.config)
 		return self.songs[normalized]
 
 class PlaylistIndex:
 	"""Responsible for getting named playlists from fb2k"""
-	def __init__(self, playlists_path):
+	def __init__(self, config):
 		"""Construct a PlaylistIndex
 
 		Reads playlist name/path associations from index.dat,
-		which is found in the playlists_path directory along with fpl files.
-		playlists_path should be something like ~/.foobar2000/playlists
+		which is found in the config.playlist_source directory along with fpl files.
+		config.playlists_source should be something like ~/.foobar2000/playlists
 		"""
-		self.playlists_path = playlists_path
+		self.config = config
 		self.fpl_files = {} # name -> fpl path
 		self.playlists = {} # name -> playlist
-		self.song_index = SongIndex()
+		self.song_index = SongIndex(self.config)
 		# TODO: parse index.dat, fill in fpl_files dict
 	def get_playlist(self, name):
 		"""Get the playlist with the given name, raises KeyError if it does not exist"""
@@ -104,6 +108,46 @@ class PlaylistIndex:
 			else:
 				raise KeyError("Playlist " + name + " does not exist")
 		return self.playlists[name]
+
+class SyncDirector:
+	"""Responsible for actually moving files around
+
+	Can add playlists to transfer and songs to transfer, then trigger the transfer
+	Both operations will throw an exception upon adding if source files are too big
+	"""
+	def __init__(self, config):
+		config.validate()
+		self.config = config
+		self.is_gathering = True # gathering files, transfer hasn't begun
+		self.songs = set() # set of all Songs to transfer
+		# create a temporary directory to hold playlists, rsync include file
+		self.temp_dir = tempfile.mkdtemp(prefix="fplsync")
+		print("Created temp directory at " + self.temp_dir)
+		if self.config.playlist_dest is not None:
+			self.playlist_dir = os.path.join(self.temp_dir, "playlists")
+			os.mkdir(self.playlist_dir)
+	def add_playlist(self, playlist):
+		"""Add a playlist, which will be transferred to playlist_dest"""
+		if not self.is_gathering:
+			raise Exception("Cannot add playlist after transfer begins")
+		if self.config.playlist_dest is None:
+			raise Exception("Cannot add playlist if playlist_dest was not provided")
+		# TODO
+	def add_songs(self, songs):
+		if not self.is_gathering:
+			raise Exception("Cannot add songs after transfer begins")
+		# TODO
+	def transfer(self):
+		# TODO
+		self.is_gathering = False
+		# clean up temporary directory we made
+		if self.config.dont_delete_temp:
+			print("Skipping temp directory deletion!")
+			pass
+		else:
+			shutil.rmtree(self.temp_dir)
+			print("Deleted temp directory at " + self.temp_dir)
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Sync foobar2000 playlists and their songs")
@@ -123,9 +167,22 @@ if __name__ == "__main__":
 	
 	# create a Config instance and set its properties according to command line args
 	config = parser.parse_args(namespace=Config())
-	config.validate()
+	config.dont_delete_temp = False
 	print(config)
-	# TODO: actually do stuff
+
+	director = SyncDirector(config)
+	index = PlaylistIndex(config)
+	for name in config.playlists:
+		try:
+			director.add_playlist(index.get_playlist(name))
+		except:
+			break
+	for name in config.playlists:
+		try:
+			director.add_songs(index.get_playlist(name))
+		except:
+			break
+	director.transfer()
 
 
 """
