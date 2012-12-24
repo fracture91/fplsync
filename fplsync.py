@@ -10,8 +10,10 @@ import tempfile
 import shutil
 import subprocess
 
+
 class Config:
 	"""Holds all config info - must not be altered after it's passed off to a consumer"""
+	
 	def __init__(self):
 		# see ArgumentParser below - set default values
 		self.playlist_source = None
@@ -22,6 +24,7 @@ class Config:
 		self.fb2k_source_mapping = None
 		self.dry_run = False
 		self.max_size = None
+	
 	def validate(self):
 		dirprops = ["playlist_source", "source", "dest"]
 		if self.playlist_dest is not None:
@@ -41,6 +44,7 @@ class Config:
 				self.max_size = self.size_str_to_bytes(self.max_size)
 			if self.max_size < 1024 and self.max_size > 0:
 				raise Exception("max_size is less than a kibibyte - probably a mistake")
+	
 	def size_str_to_bytes(self, string):
 		"""Take in a size argument (20M, 1.5T, etc.) and return number of bytes (IEC)"""
 		if re.match('\d', string[-1]) is None:
@@ -49,11 +53,14 @@ class Config:
 			power = 10 * (units.index(string[-1].lower()) + 1)
 			return int(number * math.pow(2, power))
 		return int(string)
+	
 	def __repr__(self):
 		return "Config {" + ', '.join("%s: %s" % item for item in vars(self).items()) + "}"
 
+
 class Song:
 	"""Describes a song (which is just some file path)"""
+	
 	def __init__(self, windows_path, config):
 		"""Create a song with the given windows path
 		
@@ -62,6 +69,7 @@ class Song:
 		"""
 		self.windows_path = windows_path
 		self.config = config
+		
 		# the path to the song in the source directory
 		self.source_path = self.windows_path
 		if config.fb2k_source_mapping is not None:
@@ -73,6 +81,7 @@ class Song:
 			self.source_path = os.path.join(self.config.source, relpath)
 		elif not self.source_path.startswith(self.config.source):
 			raise Exception("Song " + self.source_path + " is not within source")
+		
 		# the path of the song relative to the source directory
 		self.relative_path = os.path.relpath(self.source_path, start=self.config.source)
 		dest_path = os.path.join(self.config.dest, self.relative_path)
@@ -82,8 +91,10 @@ class Song:
 	def __repr__(self):
 		return self.windows_path
 
+
 class Playlist:
 	"""Holds a list of songs"""
+	
 	def __init__(self, name, fpl, song_index):
 		"""Create a playlist
 
@@ -94,12 +105,14 @@ class Playlist:
 		self.fpl = fpl
 		self.songs = []
 		self.song_index = song_index
+		
 		print("Parsing playlist " + self.name + "...")
 		with open(self.fpl, 'rb') as infile:
 			# FPL entries have file URIs surrounded by null bytes
 			paths = re.findall(b'(?<=\x00file://)[^\x00]*(?=\x00)', infile.read())
 			# decode the paths as utf-8 and create our songs array
 			self.songs = [self.song_index.get_song(path.decode('utf-8')) for path in paths]
+	
 	def write(self, path):
 		"""Write this playlist as an m3u8 to path/name.m3u8
 		
@@ -122,17 +135,21 @@ class SongIndex:
 	Since the same song can be used many times even among a single playlist, we don't want to create
 	a whole bunch of duplicate paths in memory
 	"""
+	
 	def __init__(self, config):
 		self.songs = {} # windows path -> Song instance
 		self.config = config
+	
 	def get_song(self, windows_path):
 		normalized = ntpath.abspath(windows_path)
 		if not normalized in self.songs:
 			self.songs[normalized] = Song(normalized, self.config)
 		return self.songs[normalized]
 
+
 class PlaylistIndex:
 	"""Responsible for getting named playlists from fb2k"""
+	
 	def __init__(self, config):
 		"""Construct a PlaylistIndex
 
@@ -155,7 +172,8 @@ class PlaylistIndex:
 			# re.DOTALL is important, otherwise \x10 doesn't match the dot
 			fpl_re = re.compile(b'(?<=\x00\x00)(\d+\.fpl)(..)(\x00\x00)', re.DOTALL)
 			lastpos = 0
-			while True:
+			
+			while True: # keep finding matches for the above pattern until there are no more
 				result = fpl_re.search(data, lastpos)
 				if result is None:
 					break
@@ -180,9 +198,11 @@ class PlaylistIndex:
 				raise KeyError("Playlist " + name + " does not exist")
 		return self.playlists[name]
 
+
 class OutOfSpaceException(Exception):
 	"""Raised when we run out of space on the device"""
 	pass
+
 
 class SyncDirector:
 	"""Responsible for actually moving files around
@@ -190,6 +210,7 @@ class SyncDirector:
 	Can add playlists to transfer and songs to transfer, then trigger the transfer
 	Both operations will throw an exception upon adding if source files are too big
 	"""
+	
 	def __init__(self, config):
 		config.validate()
 		self.config = config
@@ -203,6 +224,7 @@ class SyncDirector:
 			os.mkdir(self.playlist_dir)
 		self.is_playlist_added = False
 		self.find_max_size()
+	
 	def find_max_size(self):
 		# things get very unportable here...
 		stat = os.statvfs(self.config.dest)
@@ -223,6 +245,7 @@ class SyncDirector:
 		if self.max_size < 1024:
 			raise Exception("Not enough free space")
 		print("SyncDirector.max_size: " + str(self.max_size))
+	
 	def add_playlist(self, playlist):
 		"""Add a playlist, which will be transferred to playlist_dest"""
 		if not self.is_gathering:
@@ -232,12 +255,13 @@ class SyncDirector:
 		# TODO: size check
 		# write to our temp playlist directory
 		path = playlist.write(self.playlist_dir)
-
 		self.is_playlist_added = True
+	
 	def add_songs(self, songs):
 		if not self.is_gathering:
 			raise Exception("Cannot add songs after transfer begins")
 		# TODO
+	
 	def transfer(self):
 		self.is_gathering = False
 		if self.is_playlist_added:
