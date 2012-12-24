@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 
+import math
 import re
 import os
 import sys
@@ -7,6 +8,7 @@ import ntpath
 import argparse
 import tempfile
 import shutil
+import subprocess
 
 class Config:
 	"""Holds all config info - must not be altered after it's passed off to a consumer"""
@@ -19,6 +21,7 @@ class Config:
 		self.playlist_dest = None
 		self.fb2k_source_mapping = None
 		self.dry_run = False
+		self.max_size = None
 	def validate(self):
 		dirprops = ["playlist_source", "source", "dest"]
 		if self.playlist_dest is not None:
@@ -33,6 +36,19 @@ class Config:
 				self.fb2k_source_mapping = self.fb2k_source_mapping + ntpath.sep
 		if not isinstance(self.dry_run, bool):
 			raise TypeError("dry_run must be a bool")
+		if self.max_size is not None:
+			if not isinstance(self.max_size, int):
+				self.max_size = self.size_str_to_bytes(self.max_size)
+			if self.max_size < 1024 and self.max_size > 0:
+				raise Exception("max_size is less than a kibibyte - probably a mistake")
+	def size_str_to_bytes(self, string):
+		"""Take in a size argument (20M, 1.5T, etc.) and return number of bytes (IEC)"""
+		if re.match('\d', string[-1]) is None:
+			units = ['k', 'm', 'g', 't']
+			number = float(string[:-1])
+			power = 10 * (units.index(string[-1].lower()) + 1)
+			return int(number * math.pow(2, power))
+		return int(string)
 	def __repr__(self):
 		return "Config {" + ', '.join("%s: %s" % item for item in vars(self).items()) + "}"
 
@@ -93,9 +109,11 @@ class Playlist:
 		if not os.path.isdir(path):
 			raise Exception("path must point to a directory")
 		print("Writing playlist " + self.name)
-		with open(os.path.join(path, self.name + ".m3u8"), "w") as outfile:
+		full_path = os.path.join(path, self.name + ".m3u8")
+		with open(full_path, "w") as outfile:
 			for song in self.songs:
 				print(song.playlist_path, file=outfile)
+		return full_path
 	
 
 class SongIndex:
@@ -177,13 +195,34 @@ class SyncDirector:
 		self.config = config
 		self.is_gathering = True # gathering files, transfer hasn't begun
 		self.songs = set() # set of all Songs to transfer
-		# create a temporary directory to hold playlists, rsync include file
+		# create a temporary directory to hold playlists and rsync include file
 		self.temp_dir = tempfile.mkdtemp(prefix="fplsync")
 		print("Created temp directory at " + self.temp_dir)
 		if self.config.playlist_dest is not None:
 			self.playlist_dir = os.path.join(self.temp_dir, "playlists")
 			os.mkdir(self.playlist_dir)
 		self.is_playlist_added = False
+		self.find_max_size()
+	def find_max_size(self):
+		# things get very unportable here...
+		stat = os.statvfs(self.config.dest)
+		free = stat.f_bavail * stat.f_frsize # free space on dest disk
+		# anything that doesn't belong in dest is going to be deleted, so we can consider it free
+		space_dirs = [self.config.dest]
+		if self.config.playlist_dest is not None:
+			space_dirs.append(self.config.playlist_dest)
+		# universal_newlines needed for string output rather than bytes
+		output = subprocess.check_output(["du", "-csb"] + space_dirs, universal_newlines=True)
+		free += int(re.search('(\d+)\s+total', output).group(1))
+		self.max_size = free
+		if self.config.max_size is not None:
+			if self.config.max_size < 0:
+				self.max_size = free + self.config.max_size
+			else:
+				self.max_size = min(free, self.config.max_size)
+		if self.max_size < 1024:
+			raise Exception("Not enough free space")
+		print("SyncDirector.max_size: " + str(self.max_size))
 	def add_playlist(self, playlist):
 		"""Add a playlist, which will be transferred to playlist_dest"""
 		if not self.is_gathering:
@@ -192,7 +231,8 @@ class SyncDirector:
 			raise Exception("Cannot add playlist if playlist_dest was not provided")
 		# TODO: size check
 		# write to our temp playlist directory
-		playlist.write(self.playlist_dir)
+		path = playlist.write(self.playlist_dir)
+
 		self.is_playlist_added = True
 	def add_songs(self, songs):
 		if not self.is_gathering:
@@ -229,15 +269,19 @@ if __name__ == "__main__":
 	                    foobar2000 uses, if different than SOURCE (e.g. 'F:\Music')")
 	parser.add_argument("--dry-run", "-n", action='store_true', help="print what will happen, but\
 	                    don't actually copy or delete any files - highly recommended before a real\
-						run")
+	                    run")
+	parser.add_argument("--max-size", help="maximum number of bytes of space to take up among songs\
+	                    and playlists.  Always limited by the free space on the device.  If\
+	                    negative, leave that much space free.  Can use units ('1.5T', '-200M').\
+	                    Units are short for base 2 units (KiB, MiB, ...).")
 	
 	# create a Config instance and set its properties according to command line args
 	config = parser.parse_args(namespace=Config())
 	config.dont_delete_temp = True
-	print(config)
 
 	director = SyncDirector(config)
 	index = PlaylistIndex(config)
+	print(config)
 	for name in config.playlists:
 		try:
 			director.add_playlist(index.get_playlist(name))
