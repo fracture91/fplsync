@@ -69,6 +69,7 @@ class Song:
 		"""
 		self.windows_path = windows_path
 		self.config = config
+		self.cached_size = None
 		
 		# the path to the song in the source directory
 		self.source_path = self.windows_path
@@ -87,9 +88,15 @@ class Song:
 		dest_path = os.path.join(self.config.dest, self.relative_path)
 		# the path of the song after copied to dest, relative to playlist_dest
 		self.playlist_path = os.path.relpath(dest_path, start=self.config.playlist_dest)
-			
+		
+	def get_size(self):
+		"""Return the size of the song in its source directory"""
+		if self.cached_size is None:
+			self.cached_size = os.path.getsize(self.source_path)
+		return self.cached_size
+
 	def __repr__(self):
-		return self.windows_path
+		return "Song at " + self.windows_path
 
 
 class Playlist:
@@ -127,6 +134,12 @@ class Playlist:
 			for song in self.songs:
 				print(song.playlist_path, file=outfile)
 		return full_path
+
+	def __iter__(self):
+		return iter(self.songs)
+
+	def __repr__(self):
+		return "Playlist '" + self.name + "' with " + str(len(self.songs)) + " songs"
 	
 
 class SongIndex:
@@ -201,7 +214,15 @@ class PlaylistIndex:
 
 class OutOfSpaceException(Exception):
 	"""Raised when we run out of space on the device"""
-	pass
+	
+	def __init__(self, failed_object, failed_size):
+		"""failed_object is the object that was too big to be transferred (Playlist, Song)
+		failed_size is the size of that object in bytes
+		"""
+		self.failed_object = failed_object
+		self.failed_size = failed_size
+		super().__init__(str(self.failed_object) + " was too big at " + str(self.failed_size)
+		                 + " bytes")
 
 
 class SyncDirector:
@@ -263,17 +284,30 @@ class SyncDirector:
 		size = os.path.getsize(path)
 		if self.cumulative_size + size > self.max_size:
 			os.remove(path)
-			message = "Playlist too large: " + playlist.name + " " + str(size)
-			print(message)
-			raise OutOfSpaceException(message)
+			raise OutOfSpaceException(playlist, size)
 		else:
 			self.cumulative_size += size
 		self.is_playlist_added = True
 	
 	def add_songs(self, songs):
+		"""Add the given songs, which will be transferred to dest.
+		
+		songs must be an iterable of Song instances (like a Playlist), or a single Song instance.
+		Adds songs until there wouldn't be enough space to fit one.
+		Once space runs out, OutOfSpaceException is raised, but the successfully added songs remain.
+		"""
 		if not self.is_gathering:
 			raise Exception("Cannot add songs after transfer begins")
-		# TODO
+		if isinstance(songs, Song):
+			songs = [songs]
+		for song in songs:
+			if song not in self.songs: # don't double-count any songs!
+				size = song.get_size()
+				if self.cumulative_size + size > self.max_size:
+					raise OutOfSpaceException(song, size)
+				else:
+					self.songs.add(song)
+					self.cumulative_size += size
 	
 	def transfer(self):
 		self.is_gathering = False
@@ -322,12 +356,14 @@ if __name__ == "__main__":
 	for name in config.playlists:
 		try:
 			director.add_playlist(index.get_playlist(name))
-		except OutOfSpaceException:
+		except OutOfSpaceException as e:
+			print(e)
 			break
 	for name in config.playlists:
 		try:
 			director.add_songs(index.get_playlist(name))
-		except OutOfSpaceException:
+		except OutOfSpaceException as e:
+			print(e)
 			break
 	director.transfer()
 
