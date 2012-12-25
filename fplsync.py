@@ -223,6 +223,7 @@ class SyncDirector:
 			self.playlist_dir = os.path.join(self.temp_dir, "playlists")
 			os.mkdir(self.playlist_dir)
 		self.is_playlist_added = False
+		self.cumulative_size = 0
 		self.find_max_size()
 	
 	def find_max_size(self):
@@ -247,14 +248,26 @@ class SyncDirector:
 		print("SyncDirector.max_size: " + str(self.max_size))
 	
 	def add_playlist(self, playlist):
-		"""Add a playlist, which will be transferred to playlist_dest"""
+		"""Add a playlist, which will be transferred to playlist_dest as an m3u8 file.
+		
+		Paths in the playlist will be relative paths pointing to files in dest.
+		Raises an OutOfSpaceException if the playlist file would be too big.
+		"""
 		if not self.is_gathering:
 			raise Exception("Cannot add playlist after transfer begins")
 		if self.config.playlist_dest is None:
 			raise Exception("Cannot add playlist if playlist_dest was not provided")
-		# TODO: size check
 		# write to our temp playlist directory
 		path = playlist.write(self.playlist_dir)
+		# make sure adding it doesn't put us over the limit
+		size = os.path.getsize(path)
+		if self.cumulative_size + size > self.max_size:
+			os.remove(path)
+			message = "Playlist too large: " + playlist.name + " " + str(size)
+			print(message)
+			raise OutOfSpaceException(message)
+		else:
+			self.cumulative_size += size
 		self.is_playlist_added = True
 	
 	def add_songs(self, songs):
