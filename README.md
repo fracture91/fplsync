@@ -1,19 +1,42 @@
 fplsync
 =======
 
-Goals
------
+NOTE: This is probably filled with horrible bugs - I'm in the middle of
+syncing tons of music for the first time, which is working well so far.
 
-Be able to perform sync without opening foobar2000
+fplsync is a python script/module that allows you to synchronize
+foobar2000's FPL playlists and their contents to some other directory,
+such as the SD card on an Android phone.
 
-Be able to work on my Galaxy S3 with PowerAmp
+Features:
+* Runs without opening foobar2000
+* Works fine with large libraries (tested with a 26k track library)
+* Works fine with autoplaylists, allowing you to take advantage of
+  foobar2000's powerful query syntax
+* Basic CLI that allows you to sync music from given playlists until
+  space runs out
+* Specify a maximum amount of data to copy or a minimum amount of free
+  space to keep
+* Save playlists as m3u8 files at the destination device, with relative
+  file paths pointing to music in the destination directory
+* Python module to enable more complex logic (e.g. copy all songs from
+  playlist A, copy 50 random songs from playlist B if it's a Tuesday,
+  copy the first 10 songs from Playlist C, then fill any remaining space
+  with random tracks)
+* Preserves directory structure from the source directory
 
-CLI for simple use
-Copies fpl playlists with given names and their contained files to indicated
-directory.  Playlists copied as m3u8 files with relative pathnames.  Files
-copied in order until space runs out in the target directory.
+Limitations:
+* Pretty sure it won't work on Windows (I got lazy at one point)
+* Based on reverse-engineering of the binary format that foobar2000
+  uses, which is purposefully undocumented and unstable
+* Not tested with MTP/PTP protocols - I'm just plugging my SD card into
+  my machine.  I assume connecting your phone as UMS will work.
+* Python module is very bare bones and untested at the moment
 
-Reusable python package for more complex scripts
-e.g. Copy playlist A, then copy random songs from playlist B until space
-runs out in the target directory
+Requirements:
+* foobar2000 1.1.13, presumably running under Wine, though all that's
+  really needed is its "playlists" directory
+* rsync (I have 3.0.9)
+* Python 3.2
+* du (I have 8.13)
 
