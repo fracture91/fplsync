@@ -24,6 +24,7 @@ class Config:
 		self.fb2k_source_mapping = None
 		self.dry_run = False
 		self.max_size = None
+		self.dont_delete_temp = False # for debugging, not exposed to CLI
 	
 	def validate(self):
 		dirprops = ["playlist_source", "source", "dest"]
@@ -399,11 +400,9 @@ if __name__ == "__main__":
 	
 	# create a Config instance and set its properties according to command line args
 	config = parser.parse_args(namespace=Config())
-	config.dont_delete_temp = True
 
 	director = SyncDirector(config)
 	index = PlaylistIndex(config)
-	print(config)
 	for name in config.playlists:
 		try:
 			director.add_playlist(index.get_playlist(name))
