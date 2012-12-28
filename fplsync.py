@@ -200,7 +200,6 @@ class PlaylistIndex:
 					raise Exception("Error reading index.dat: not enough data for name")
 				name = data[result.end():lastpos].decode('utf-8')
 				self.fpl_files[name] = os.path.join(self.config.playlist_source, fpl_path)
-			print(self.fpl_files)
 
 	def get_playlist(self, name):
 		"""Get the playlist with the given name, raises KeyError if it does not exist"""
@@ -266,7 +265,6 @@ class SyncDirector:
 				self.max_size = min(free, self.config.max_size)
 		if self.max_size < 1024:
 			raise Exception("Not enough free space")
-		print("SyncDirector.max_size: " + str(self.max_size))
 	
 	def add_playlist(self, playlist):
 		"""Add a playlist, which will be transferred to playlist_dest as an m3u8 file.
