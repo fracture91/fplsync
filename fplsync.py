@@ -306,15 +306,43 @@ class SyncDirector:
 				else:
 					self.songs.add(song)
 					self.cumulative_size += size
-	
+
+	def ensure_trailing_slash(self, path):
+		path = os.path.normpath(path)
+		if not path.endswith(os.path.sep):
+			path += os.path.sep
+		return path
+
+	def ensure_no_trailing_slash(self, path):
+		path = os.path.normpath(path)
+		if path.endswith(os.path.sep):
+			path = path[:-1]
+		return path
+
 	def transfer(self):
 		self.is_gathering = False
+		
+		skip_songs = False
 		if self.is_playlist_added:
-			# TODO: rsync tmp/playlists
-			pass
-		if len(self.songs) > 0:
+			# rsync will behave very differently depending on trailing slashes...
+			source = self.ensure_trailing_slash(self.playlist_dir)
+			dest = self.ensure_no_trailing_slash(self.config.playlist_dest)
+			# size-only is needed to ignore timestamps - remember the source playlists were just
+			# made, so the timestamps will never be the same
+			args = ["rsync", "-mrt", "--delete-before", "--size-only", "--progress", source, dest]
+			if self.config.dry_run:
+				args.insert(1, "--dry-run")
+			# output rsync stuff normally, throw error if return code isn't 0
+			try:
+				subprocess.check_call(args)
+			except subprocess.CalledProcessError as e:
+				print("!!! rsync returned " + str(e.returncode) + " while syncing playlists")
+				skip_songs = input("Enter Y to continue syncing songs: ") != "Y"
+		
+		if not skip_songs and len(self.songs) > 0:
 			# TODO: make include file, rsync source and dest
 			pass
+		
 		# clean up temporary directory we made
 		if self.config.dont_delete_temp:
 			print("Skipping temp directory deletion!")
