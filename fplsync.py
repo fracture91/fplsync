@@ -125,11 +125,13 @@ class Playlist:
 		
 		Acts like it is being written to config.playlist_dest with relative paths pointing to
 		config.dest.
+		Name is sanitized for FAT32, bad chars replaced with underscores.
 		"""
 		if not os.path.isdir(path):
 			raise Exception("path must point to a directory")
 		print("Writing playlist " + self.name)
-		full_path = os.path.join(path, self.name + ".m3u8")
+		sanitized_name = re.sub(r'[\x00-\x1F\x7F*/:<>?\\|+,.;=[\]]', '_', self.name)
+		full_path = os.path.join(path, sanitized_name + ".m3u8")
 		with open(full_path, "w") as outfile:
 			for song in self.songs:
 				print(song.playlist_path, file=outfile)
