@@ -239,6 +239,7 @@ class SyncDirector:
 		# create a temporary directory to hold playlists and rsync include file
 		self.temp_dir = tempfile.mkdtemp(prefix="fplsync")
 		print("Created temp directory at " + self.temp_dir)
+		self.include_file = os.path.join(self.temp_dir, "include.txt")
 		if self.config.playlist_dest is not None:
 			self.playlist_dir = os.path.join(self.temp_dir, "playlists")
 			os.mkdir(self.playlist_dir)
@@ -319,6 +320,12 @@ class SyncDirector:
 			path = path[:-1]
 		return path
 
+	def write_include_file(self):
+		with open(self.include_file, "w") as f:
+			print("/**/", file=f)
+			for song in self.songs:
+				print(os.path.sep + re.sub("([[*?])", r"\\\1", song.relative_path), file=f)
+
 	def transfer(self):
 		self.is_gathering = False
 		
@@ -334,14 +341,30 @@ class SyncDirector:
 				args.insert(1, "--dry-run")
 			# output rsync stuff normally, throw error if return code isn't 0
 			try:
+				print("rsyncing playlists")
 				subprocess.check_call(args)
 			except subprocess.CalledProcessError as e:
 				print("!!! rsync returned " + str(e.returncode) + " while syncing playlists")
 				skip_songs = input("Enter Y to continue syncing songs: ") != "Y"
 		
 		if not skip_songs and len(self.songs) > 0:
-			# TODO: make include file, rsync source and dest
-			pass
+			# see http://stackoverflow.com/a/1813972
+			print("Writing include file")
+			self.write_include_file()
+			
+			source = self.ensure_trailing_slash(self.config.source)
+			dest = self.ensure_no_trailing_slash(self.config.dest)
+			
+			args = ["rsync", "-mrlt", "--modify-window=1", "--delete-before", "--progress",
+			        "--delete-excluded", "--include-from=" + self.include_file, "--exclude=*",
+			        source, dest]
+			if self.config.dry_run:
+				args.insert(1, "--dry-run")
+			try:
+				print("rsyncing songs")
+				subprocess.check_call(args)
+			except subprocess.CalledProcessError as e:
+				print("!!! rsync returned " + str(e.returncode) + " while syncing songs")
 		
 		# clean up temporary directory we made
 		if self.config.dont_delete_temp:
