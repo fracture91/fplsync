@@ -9,6 +9,7 @@ import argparse
 import tempfile
 import shutil
 import subprocess
+import random
 
 
 class Config:
@@ -291,17 +292,21 @@ class SyncDirector:
 			self.cumulative_size += size
 		self.is_playlist_added = True
 	
-	def add_songs(self, songs):
+	def add_songs(self, songs, randomly=False):
 		"""Add the given songs, which will be transferred to dest.
 		
 		songs must be an iterable of Song instances (like a Playlist), or a single Song instance.
 		Adds songs until there wouldn't be enough space to fit one.
 		Once space runs out, OutOfSpaceException is raised, but the successfully added songs remain.
+		If randomly==True, songs are added randomly rather than in the order of the iterable.
 		"""
 		if not self.is_gathering:
 			raise Exception("Cannot add songs after transfer begins")
 		if isinstance(songs, Song):
 			songs = [songs]
+		if randomly:
+			songs = list(songs) # shuffling happens in-place, need a copy
+			random.shuffle(songs)
 		for song in songs:
 			if song not in self.songs: # don't double-count any songs!
 				size = song.get_size()
