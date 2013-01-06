@@ -33,8 +33,8 @@ class Config:
 			dirprops.append("playlist_dest")
 		for prop in dirprops:
 			value = getattr(self, prop)
-			if not os.path.isdir(value):
-				raise IOError(prop + "=" + value + " is not a directory")
+			if value is None or not os.path.isdir(value):
+				raise IOError(prop + "=" + str(value) + " is not a directory")
 		if self.fb2k_source_mapping is not None:
 			self.fb2k_source_mapping = ntpath.abspath(self.fb2k_source_mapping)
 			if not self.fb2k_source_mapping.endswith(ntpath.sep):
