@@ -10,6 +10,7 @@ import tempfile
 import shutil
 import subprocess
 import random
+import uuid
 
 
 class Config:
@@ -25,7 +26,10 @@ class Config:
 		self.fb2k_source_mapping = None
 		self.dry_run = False
 		self.max_size = None
+		self.min_free = None
 		self.dont_delete_temp = False # for debugging, not exposed to CLI
+		self.free_override = None
+		self.total_override = None
 	
 	def validate(self):
 		dirprops = ["playlist_source", "source", "dest"]
@@ -44,8 +48,11 @@ class Config:
 		if self.max_size is not None:
 			if not isinstance(self.max_size, int):
 				self.max_size = self.size_str_to_bytes(self.max_size)
-			if self.max_size < 1024 and self.max_size > 0:
-				raise Exception("max_size is less than a kibibyte - probably a mistake")
+		if self.min_free is not None:
+			if not isinstance(self.min_free, int):
+				self.min_free = self.size_str_to_bytes(self.min_free)
+			if self.min_free < 0:
+				raise ValueError("min_free must be grater than zero")
 	
 	def size_str_to_bytes(self, string):
 		"""Take in a size argument (20M, 1.5T, etc.) and return number of bytes (IEC)"""
@@ -255,6 +262,12 @@ class SyncDirector:
 		# things get very unportable here...
 		stat = os.statvfs(self.config.dest)
 		free = stat.f_bavail * stat.f_frsize # free space on dest disk
+		if self.config.free_override is not None:
+			free = self.config.free_override # for testing
+		total = stat.f_blocks * stat.f_frsize # total size of dest disk
+		if self.config.total_override is not None:
+			total = self.config.total_override
+
 		# anything that doesn't belong in dest is going to be deleted, so we can consider it free
 		space_dirs = [self.config.dest]
 		if self.config.playlist_dest is not None:
@@ -262,15 +275,26 @@ class SyncDirector:
 		# universal_newlines needed for string output rather than bytes
 		output = subprocess.check_output(["du", "-csb"] + space_dirs, universal_newlines=True)
 		free += int(re.search('(\d+)\s+total', output).group(1))
-		self.max_size = free
+		# however, empty directories themselves will remain, which take up space
+		empty_dir_path = os.path.join(self.config.dest, str(uuid.uuid4()))
+		os.mkdir(empty_dir_path)
+		empty_size = os.path.getsize(empty_dir_path)
+		os.rmdir(empty_dir_path)
+		free -= empty_size * len(space_dirs)
+		
+		self.max_size = free # by default, can only use free space
+		if self.config.min_free is not None:
+			# if min_free is defined, can use that much less space
+			self.max_size -= self.config.min_free
 		if self.config.max_size is not None:
+			# if max_size would bring us even lower, use it
 			if self.config.max_size < 0:
-				self.max_size = free + self.config.max_size
+				self.max_size = min(self.max_size, total + self.config.max_size)
 			else:
-				self.max_size = min(free, self.config.max_size)
+				self.max_size = min(self.max_size, self.config.max_size)
 		if self.max_size < 1024:
 			raise Exception("Not enough free space")
-	
+
 	def add_playlist(self, playlist):
 		"""Add a playlist, which will be transferred to playlist_dest as an m3u8 file.
 		
@@ -400,8 +424,10 @@ if __name__ == "__main__":
 	                    run")
 	parser.add_argument("--max-size", help="maximum number of bytes of space to take up among songs\
 	                    and playlists.  Always limited by the free space on the device.  If\
-	                    negative, leave that much space free.  Can use units ('1.5T', '-200M').\
-	                    Units are short for base 2 units (KiB, MiB, ...).")
+	                    negative, count backwards from size of destination.  Can use units ('1.5T',\
+	                    '-200M').  Units are short for base 2 units (KiB, MiB, ...).")
+	parser.add_argument("--min-free", help="minimum number of bytes to keep free on the\
+	                    destination.  See --max-size.")
 	
 	# create a Config instance and set its properties according to command line args
 	config = parser.parse_args(namespace=Config())
