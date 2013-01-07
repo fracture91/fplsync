@@ -412,28 +412,33 @@ class SyncDirector:
 			print("Deleted temp directory at " + self.temp_dir)
 
 
+def make_arg_parser(optional_only=False):
+	ap = argparse.ArgumentParser(description="Sync foobar2000 playlists and their songs")
+	ap.add_argument("--playlist-dest", help="if specified, copy PLAYLISTS to this directory as m3u8\
+	                files that use relative paths to point to their songs in DEST")
+	ap.add_argument("--fb2k-source-mapping", help="absolute path to the SOURCE directory that\
+	                foobar2000 uses, if different than SOURCE (e.g. 'F:\Music')")
+	ap.add_argument("--dry-run", "-n", action='store_true', help="print what will happen, but don't\
+	                actually copy or delete any files - highly recommended before a real run")
+	ap.add_argument("--max-size", help="maximum number of bytes of space to take up among songs and\
+	                playlists.  Always limited by the free space on the device.  If negative, count\
+	                backwards from size of destination.  Can use units ('1.5T', '-200M').  Units\
+	                are short for base 2 units (KiB, MiB, ...).")
+	ap.add_argument("--min-free", help="minimum number of bytes to keep free on the destination.\
+	                See --max-size.")
+	if optional_only:
+		return ap
+	ap.add_argument("playlist_source", metavar="playlist-source",
+	                help="directory containing foobar2000's FPL files")
+	ap.add_argument("source", help="directory where all songs in FPLs are stored under")
+	ap.add_argument("dest", help="directory to copy songs to - ALL EXTRANEOUS FILES DELETED")
+	ap.add_argument("playlists", nargs='+', help="at least one playlist name, for which the\
+	                contained songs will be copied into DEST")
+	return ap
+
+
 if __name__ == "__main__":
-	parser = argparse.ArgumentParser(description="Sync foobar2000 playlists and their songs")
-	parser.add_argument("playlist_source", metavar="playlist-source",
-	                    help="directory containing foobar2000's FPL files")
-	parser.add_argument("source", help="directory where all songs in FPLs are stored under")
-	parser.add_argument("dest", help="directory to copy songs to - ALL EXTRANEOUS FILES DELETED")
-	parser.add_argument("playlists", nargs='+', help="at least one playlist name, for which the\
-	                    contained songs will be copied into DEST")
-	parser.add_argument("--playlist-dest", help="if specified, copy PLAYLISTS to this directory as\
-	                    m3u8 files that use relative paths to point to their songs in DEST")
-	parser.add_argument("--fb2k-source-mapping", help="absolute path to the SOURCE directory that\
-	                    foobar2000 uses, if different than SOURCE (e.g. 'F:\Music')")
-	parser.add_argument("--dry-run", "-n", action='store_true', help="print what will happen, but\
-	                    don't actually copy or delete any files - highly recommended before a real\
-	                    run")
-	parser.add_argument("--max-size", help="maximum number of bytes of space to take up among songs\
-	                    and playlists.  Always limited by the free space on the device.  If\
-	                    negative, count backwards from size of destination.  Can use units ('1.5T',\
-	                    '-200M').  Units are short for base 2 units (KiB, MiB, ...).")
-	parser.add_argument("--min-free", help="minimum number of bytes to keep free on the\
-	                    destination.  See --max-size.")
-	
+	parser = make_arg_parser()
 	# create a Config instance and set its properties according to command line args
 	config = parser.parse_args(namespace=Config())
 
