@@ -48,3 +48,7 @@ Usage
 
 I *highly* recommend using the --dry-run flag before syncing for real.
 
+See [my dotfiles]
+(https://github.com/fracture91/dotfiles/blob/master/syncmusic.py)
+for an example script that uses fplsync
+
