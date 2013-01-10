@@ -52,3 +52,6 @@ See [my dotfiles]
 (https://github.com/fracture91/dotfiles/blob/master/syncmusic.py)
 for an example script that uses fplsync
 
+Note that foobar2000 doesn't normally write its playlist files to disk
+while it's running.  You can force a write by shift-clicking the
+File menu > Save configuration.
